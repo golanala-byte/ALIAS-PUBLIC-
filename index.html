@@ -145,7 +145,7 @@ let S=Object.assign({},DEF,LS.get("settings",{}));S.packs=Object.assign({},DEF.p
 let seen=new Set(LS.get("seen",[])),removed=new Set(LS.get("removed",[])),custom=LS.get("custom",[]);
 let game=LS.get("game",null),turn=LS.get("turn",null);
 let screen="home",ui={},anim=null,swReady=false;
-const VERSION="1.1";
+const VERSION="1.2";
 const saveS=()=>LS.set("settings",S),saveGame=()=>LS.set("game",game),saveTurn=()=>LS.set("turn",turn);
 const PACKS={italy:"איטליה",israeli:"ישראליות",movies:"סרטים וסדרות",family:"משפחתית"};
 const LENS={24:"קצר",40:"בינוני",56:"ארוך"};
@@ -319,7 +319,8 @@ setInterval(()=>{if(screen==="sync"){syTick();return}
   const cd=document.getElementById("cd");if(cd)cd.textContent=Math.max(0,Math.ceil((turn.start-now())/1000));
   const ck=document.getElementById("clock");if(ck){const left=turn.start+turn.dur-now();ck.textContent=fmt(left);const low=left<=10000;ck.classList.toggle("low",low);if(low&&lastBuzz!==turn.start){lastBuzz=turn.start;buzz(120)}}
 },200);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&screen==="turn"){if(phase()==="run")keepAwake(true);render()}});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&SY&&FB.api&&syG())FB.api.set("games/"+SY.code+"/players/"+SY.uid+"/online",true);
+  if(!document.hidden&&screen==="turn"){if(phase()==="run")keepAwake(true);render()}});
 
 /* ---------- game logic ---------- */
 function newTurn(role,start,extra){turn=Object.assign({role,start,dur:S.turn*1000,skip:S.skip,limit:S.skipLimit,teams:S.teams,marks:[],cur:null,last:null},extra);saveTurn();go("turn")}
@@ -409,7 +410,8 @@ async function syStart(){try{return await FB.init()}catch(e){toast("אין חי�
 function syWatch(code,api){
   SY={code,uid:api.uid,g:null};LS.set("sy",{code});
   api.on("games/"+code,g=>{const old=SY.g&&SY.g.turn?SY.g.turn.phase:null;SY.g=g;
-    if(g&&g.players&&g.players[SY.uid])api.bye("games/"+code+"/players/"+SY.uid+"/online",false);
+    const mine=g&&g.players?g.players[SY.uid]:null;
+    if(mine){api.bye("games/"+code+"/players/"+SY.uid+"/online",false);if(mine.online!==true)api.set("games/"+code+"/players/"+SY.uid+"/online",true)}
     const t=g&&g.turn;
     if(t&&t.phase==="score"&&old!=="score"&&t.from)syAnim(t.from,g.teams.map(x=>x.pos),g.meta.len);
     if(screen==="sync"){if(t&&t.phase!==old)SW.cur=SW.cur&&t.phase==="run"?SW.cur:null;render()}});
@@ -442,8 +444,10 @@ function syPick(level){
 function syNet(t,st){return (st.skip==="minus"?(t.g||0)-(t.s||0):(t.g||0))}
 function syStartTurn(){
   const g=syG(),team=(g.meta.next&&g.meta.next.team)||0;
-  const ps=Object.entries(g.players||{}).filter(([id,p])=>p.ok&&p.team===team&&p.online!==false).sort((a,b)=>a[1].ts-b[1].ts);
-  if(!ps.length){toast("אין שחקן מחובר בקבוצה "+syName(team));return}
+  const all=Object.entries(g.players||{}).filter(([id,p])=>p.ok&&p.team===team).sort((a,b)=>a[1].ts-b[1].ts);
+  let ps=all.filter(([id,p])=>p.online!==false);
+  if(!ps.length)ps=all;
+  if(!ps.length){toast("אין שחקן מאושר בקבוצה "+syName(team)+". אפשר להעביר תור.");return}
   const last=g.teams[team].lastEx,i=ps.findIndex(([id])=>id===last),ex=ps[(i+1)%ps.length][0];
   SW.cur=null;
   syUpd({turn:{team,explainer:ex,level:levelOf(g.teams[team].pos),start:FB.api.now()+5000,dur:(g.meta.settings.turn||90)*1000,g:0,s:0,phase:"run",last:null},["teams/"+team+"/lastEx"]:ex});
