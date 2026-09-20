@@ -145,7 +145,7 @@ let S=Object.assign({},DEF,LS.get("settings",{}));S.packs=Object.assign({},DEF.p
 let seen=new Set(LS.get("seen",[])),removed=new Set(LS.get("removed",[])),custom=LS.get("custom",[]);
 let game=LS.get("game",null),turn=LS.get("turn",null);
 let screen="home",ui={},anim=null,swReady=false;
-const VERSION="1.3";
+const VERSION="1.4";
 const saveS=()=>LS.set("settings",S),saveGame=()=>LS.set("game",game),saveTurn=()=>LS.set("turn",turn);
 const PACKS={italy:"איטליה",israeli:"ישראליות",movies:"סרטים וסדרות",family:"משפחתית"};
 const LENS={24:"קצר",40:"בינוני",56:"ארוך"};
@@ -215,7 +215,7 @@ V.home=()=>`<header class="brand"><div class="strip">${[1,2,3,4,5,6,7,8].map(n=>
 <button class="choice" data-act="sync" data-v="room"><b>יחד בחדר</b><span>עם אינטרנט. הכל מסונכרן בין הטלפונים</span></button>
 <button class="choice" data-act="sync" data-v="remote"><b>מרחוק</b><span>עם אינטרנט, ושיחת וואטסאפ או זום במקביל</span></button>
 </div>
-${swReady?`<p class="muted center" style="margin-top:16px">מוכן לעבודה בלי אינטרנט</p>`:""}
+<p class="muted center" style="margin-top:16px">${swReady?"מוכן לעבודה בלי אינטרנט":"&nbsp;"} · גרסה ${VERSION}</p>
 <div class="foot"><button class="btn small" data-act="go" data-v="settings">הגדרות</button><button class="btn small" data-act="go" data-v="addword">הוספת מילה</button></div>`;
 V.flight=()=>`${hdr("home")}<h2>מה הטלפון הזה עושה?</h2><p class="muted" style="margin-bottom:18px">טלפון אחד בלבד הוא המזכיר. כל השאר שחקנים.</p>
 <div class="stack">
@@ -444,7 +444,7 @@ function syPick(level){
   if(!p.length&&lvl.length){ // כל המילים ברמה הזו כבר יצאו: מאפסים אותה וממשיכים
     const clear={};lvl.forEach(w=>clear["used/"+wkey(w.w)]=null);syUpd(clear);p=lvl;toast("כל המילים ברמה "+lv+" יצאו. הרמה אופסה.")}
   if(!p.length)p=WORDS.filter(w=>!removed.has(w.w));
-  if(!p.length)return {w:"אין מילים זמינות",d:lv};
+  if(!p.length)return {w:"אבחון: רמה "+lv+", מאגר "+WORDS.length+", יצאו "+Object.keys(used).length+", הוצאו "+removed.size,d:lv};
   const w=p[Math.floor(Math.random()*p.length)];
   try{syUpd({["used/"+wkey(w.w)]:true})}catch(e){}
   return {w:w.w,d:w.d};
@@ -597,7 +597,7 @@ if(turn){const ph=phase();if(ph==="done"||ph==="last"||ph==="run"||ph==="wait"||
 const urlCode=new URLSearchParams(location.search).get("g");
 if(urlCode){ui.joinCode=urlCode.toUpperCase();ui.mode="room";screen="syncJoin"}
 render();
-if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")){navigator.serviceWorker.register("sw.js").catch(()=>{});navigator.serviceWorker.ready.then(()=>{swReady=true;if(screen==="home")render()})}
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")){navigator.serviceWorker.register("sw.js").then(r=>{r.update().catch(()=>{});setInterval(()=>r.update().catch(()=>{}),60000)}).catch(()=>{});navigator.serviceWorker.ready.then(()=>{swReady=true;if(screen==="home")render()})}
 </script>
 </body>
 </html>
