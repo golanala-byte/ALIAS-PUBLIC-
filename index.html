@@ -145,7 +145,7 @@ let S=Object.assign({},DEF,LS.get("settings",{}));S.packs=Object.assign({},DEF.p
 let seen=new Set(LS.get("seen",[])),removed=new Set(LS.get("removed",[])),custom=LS.get("custom",[]);
 let game=LS.get("game",null),turn=LS.get("turn",null);
 let screen="home",ui={},anim=null,swReady=false;
-const VERSION="1.0";
+const VERSION="1.1";
 const saveS=()=>LS.set("settings",S),saveGame=()=>LS.set("game",game),saveTurn=()=>LS.set("turn",turn);
 const PACKS={italy:"איטליה",israeli:"ישראליות",movies:"סרטים וסדרות",family:"משפחתית"};
 const LENS={24:"קצר",40:"בינוני",56:"ארוך"};
@@ -212,8 +212,8 @@ const hdr=(back,title="")=>`<div class="top"><button class="back" data-act="go" 
 V.home=()=>`<header class="brand"><div class="strip">${[1,2,3,4,5,6,7,8].map(n=>tile(n,false,"")).join("")}</div><h1>אליאס</h1><p>בדיגיטל</p></header>
 <div class="stack">
 <button class="choice" data-act="go" data-v="flight"><b>טיסה</b><span>בלי אינטרנט. כל טלפון עצמאי, מתאמים ב-Bitchat</span></button>
-<button class="choice" disabled><b>יחד בחדר</b><span>יגיע בשלב הבא</span></button>
-<button class="choice" disabled><b>מרחוק</b><span>יגיע בשלב הבא</span></button>
+<button class="choice" data-act="sync" data-v="room"><b>יחד בחדר</b><span>עם אינטרנט. הכל מסונכרן בין הטלפונים</span></button>
+<button class="choice" data-act="sync" data-v="remote"><b>מרחוק</b><span>עם אינטרנט, ושיחת וואטסאפ או זום במקביל</span></button>
 </div>
 ${swReady?`<p class="muted center" style="margin-top:16px">מוכן לעבודה בלי אינטרנט</p>`:""}
 <div class="foot"><button class="btn small" data-act="go" data-v="settings">הגדרות</button><button class="btn small" data-act="go" data-v="addword">הוספת מילה</button></div>`;
@@ -269,8 +269,8 @@ V.secSetup=()=>{if(!ui.setup)ui.setup={n:S.teams,names:TEAM.map(t=>t.n),len:40};
 <div class="field"><span class="lbl">שמות הקבוצות</span>${Array.from({length:u.n},(_,i)=>`<div class="row">${token(i)}<input type="text" data-name="${i}" value="${esc(u.names[i])}" maxlength="18"></div>`).join("")}</div>
 <div class="field"><span class="lbl">אורך המסלול</span><div class="seg">${Object.entries(LENS).map(([l,t])=>`<button data-act="su" data-k="len" data-v="${l}" aria-pressed="${u.len==l}">${t} (${l})</button>`).join("")}</div></div>
 <div class="foot"><button class="btn primary" data-act="newGame">התחל משחק</button></div>`};
-function boardHTML(disp){const L=game.len;let cells=[];
-  for(let r=0;r<L/8;r++){let row=[];for(let c=0;c<8;c++){const p=r*8+c+1,here=game.teams.map((t,i)=>Math.min(disp[i],L)===p?i:-1).filter(i=>i>=0);
+function boardHTML(disp,len){const L=len||(game&&game.len);let cells=[];
+  for(let r=0;r<L/8;r++){let row=[];for(let c=0;c<8;c++){const p=r*8+c+1,here=disp.map((v,i)=>Math.min(v,L)===p?i:-1).filter(i=>i>=0);
     row.push(`<div class="sq${p===L?" fin":""}${here.length?" on":""}">${tile(levelOf(p),true,"משבצת "+p)}<div class="toks">${here.map(token).join("")}</div></div>`)}
     if(r%2)row.reverse();cells.push(...row)}
   return `<div class="board" id="board">${cells.join("")}</div>`}
@@ -313,7 +313,8 @@ function render(){document.documentElement.classList.toggle("night",!!S.night);c
 function go(s){screen=s;render()}
 function toast(t){const d=document.createElement("div");d.className="toast";d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
 let lastBuzz=null;
-setInterval(()=>{if(screen!=="turn"||!turn)return;const ph=phase();
+setInterval(()=>{if(screen==="sync"){syTick();return}
+  if(screen!=="turn"||!turn)return;const ph=phase();
   if(ph!==ui.ph){if(ph==="run"){keepAwake(true);buzz(200)}if(ph==="last"||ph==="end"){buzz([400,120,400]);keepAwake(false)}render();return}
   const cd=document.getElementById("cd");if(cd)cd.textContent=Math.max(0,Math.ceil((turn.start-now())/1000));
   const ck=document.getElementById("clock");if(ck){const left=turn.start+turn.dur-now();ck.textContent=fmt(left);const low=left<=10000;ck.classList.toggle("low",low);if(low&&lastBuzz!==turn.start){lastBuzz=turn.start;buzz(120)}}
@@ -372,14 +373,217 @@ const A={
   restoreBad:()=>{removed.clear();LS.set("removed",[]);toast("המילים חזרו למאגר");render()},
   nwl:v=>{ui.nwLevel=+v;const i=document.getElementById("nw"),val=i?i.value:"";render();document.getElementById("nw").value=val},
   addWord:()=>{const w=document.getElementById("nw").value.trim();if(!w)return toast("כתבו מילה");if(!ui.nwLevel)return toast("בחרו רמת קושי");
-    if(pool().some(x=>x.w===w))return toast("המילה כבר במאגר");custom.push({w,d:ui.nwLevel,cat:"משפחתית",src:"family"});LS.set("custom",custom);ui.nwLevel=0;toast("המילה נוספה");render()},
+    if(pool().some(x=>x.w===w))return toast("המילה כבר במאגר");custom.push({w,d:ui.nwLevel,cat:"משפחתית",src:"family"});LS.set("custom",custom);if(SY&&syG())FB.api.push("games/"+SY.code+"/family",{w,d:ui.nwLevel});ui.nwLevel=0;toast("המילה נוספה");render()},
   delWord:v=>{custom.splice(+v,1);LS.set("custom",custom);render()},
 };
+/* ================= מצבים מסונכרנים: יחד בחדר ומרחוק ================= */
+const CFG={apiKey:"AIzaSyBIbRBw9J1BjR8EfZyl2HOylQZMU8S-qxk",authDomain:"alias-4833b.firebaseapp.com",databaseURL:"https://alias-4833b-default-rtdb.europe-west1.firebasedatabase.app",projectId:"alias-4833b",storageBucket:"alias-4833b.firebasestorage.app",messagingSenderId:"186203984331",appId:"1:186203984331:web:a883efc5c1a250db40664e"};
+const FB={api:null,async init(){
+  if(FB.api)return FB.api;
+  if(window.__FBMOCK){FB.api=window.__FBMOCK;return FB.api}
+  const B="https://www.gstatic.com/firebasejs/10.12.2/";
+  const [a,au,d]=await Promise.all([import(B+"firebase-app.js"),import(B+"firebase-auth.js"),import(B+"firebase-database.js")]);
+  const app=a.initializeApp(CFG),auth=au.getAuth(app);await au.signInAnonymously(auth);
+  const db=d.getDatabase(app);let off=0;
+  d.onValue(d.ref(db,".info/serverTimeOffset"),s=>off=s.val()||0);
+  FB.api={uid:auth.currentUser.uid,now:()=>Date.now()+off,
+    get:async p=>(await d.get(d.ref(db,p))).val(),
+    set:(p,v)=>d.set(d.ref(db,p),v),
+    update:(p,v)=>d.update(d.ref(db,p),v),
+    remove:p=>d.remove(d.ref(db,p)),
+    push:(p,v)=>d.push(d.ref(db,p),v),
+    on:(p,cb)=>d.onValue(d.ref(db,p),s=>cb(s.val())),
+    bye:(p,v)=>d.onDisconnect(d.ref(db,p)).set(v)};
+  return FB.api}};
+let SY=null,SW={cur:null,flip:false};
+const syG=()=>SY&&SY.g,syMeta=()=>syG()&&SY.g.meta,syTurn=()=>syG()&&SY.g.turn;
+const syMe=()=>{const g=syG();return g&&g.players?g.players[SY.uid]:null};
+const syIsHost=()=>{const m=syMeta();return m&&m.host===SY.uid};
+const syTeams=()=>{const g=syG();return g&&g.teams?g.teams:[]};
+const syName=i=>{const t=syTeams()[i];return t?t.name:TEAM[i].n};
+const wkey=w=>w.replace(/[.#$\[\]\/]/g,"_");
+function syCode(){const C="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let r="";for(let i=0;i<4;i++)r+=C[Math.floor(Math.random()*C.length)];return r}
+function syUpd(o){return FB.api.update("games/"+SY.code,o)}
+function syLink(){return location.origin+location.pathname+"?g="+SY.code}
+async function syStart(){try{return await FB.init()}catch(e){toast("אין חיבור לאינטרנט. המצב הזה דורש רשת.");return null}}
+function syWatch(code,api){
+  SY={code,uid:api.uid,g:null};LS.set("sy",{code});
+  api.on("games/"+code,g=>{const old=SY.g&&SY.g.turn?SY.g.turn.phase:null;SY.g=g;
+    if(g&&g.players&&g.players[SY.uid])api.bye("games/"+code+"/players/"+SY.uid+"/online",false);
+    const t=g&&g.turn;
+    if(t&&t.phase==="score"&&old!=="score"&&t.from)syAnim(t.from,g.teams.map(x=>x.pos),g.meta.len);
+    if(screen==="sync"){if(t&&t.phase!==old)SW.cur=SW.cur&&t.phase==="run"?SW.cur:null;render()}});
+}
+async function syCreate(name,teamsN,names,len,mode){
+  const api=await syStart();if(!api)return;const code=syCode();
+  await api.set("games/"+code,{meta:{host:api.uid,mode,created:api.now(),len,phase:"lobby",settings:{turn:S.turn,skip:S.skip,skipLimit:S.skipLimit,mix:S.mix,packs:S.packs},next:{team:0}},
+    teams:Array.from({length:teamsN},(_,i)=>({name:names[i]||TEAM[i].n,pos:1})),
+    players:{[api.uid]:{name,team:0,ok:true,online:true,ts:api.now()}}});
+  syWatch(code,api);go("sync");
+}
+async function syJoin(code,name,team){
+  const api=await syStart();if(!api)return;
+  const meta=await api.get("games/"+code+"/meta");
+  if(!meta){toast("לא נמצא משחק עם הקוד הזה");return}
+  const cur=await api.get("games/"+code+"/players/"+api.uid);
+  await api.set("games/"+code+"/players/"+api.uid,{name,team:cur?cur.team:team,ok:cur?cur.ok:false,online:true,ts:cur?cur.ts:api.now()});
+  syWatch(code,api);go("sync");
+}
+function syPick(level){
+  const g=syG(),st=g.meta.settings,used=g.used||{},fam=g.family?Object.values(g.family):[];
+  const ok=w=>w.d===level&&!used[wkey(w.w)]&&!removed.has(w.w);
+  const all=WORDS.concat(fam.map(f=>({w:f.w,d:f.d,src:"family"})));
+  const base=all.filter(w=>w.src==="base"&&ok(w)),pk=all.filter(w=>w.src!=="base"&&(st.packs||{})[w.src]!==false&&ok(w));
+  let p=(pk.length&&(Math.random()*100<(st.mix==null?20:st.mix)||!base.length))?pk:base;
+  if(!p.length){p=all.filter(ok);if(!p.length)return {w:"נגמרו המילים ברמה הזו",d:level}}
+  const w=p[Math.floor(Math.random()*p.length)];
+  syUpd({["used/"+wkey(w.w)]:true});return w;
+}
+function syNet(t,st){return (st.skip==="minus"?(t.g||0)-(t.s||0):(t.g||0))}
+function syStartTurn(){
+  const g=syG(),team=(g.meta.next&&g.meta.next.team)||0;
+  const ps=Object.entries(g.players||{}).filter(([id,p])=>p.ok&&p.team===team&&p.online!==false).sort((a,b)=>a[1].ts-b[1].ts);
+  if(!ps.length){toast("אין שחקן מחובר בקבוצה "+syName(team));return}
+  const last=g.teams[team].lastEx,i=ps.findIndex(([id])=>id===last),ex=ps[(i+1)%ps.length][0];
+  SW.cur=null;
+  syUpd({turn:{team,explainer:ex,level:levelOf(g.teams[team].pos),start:FB.api.now()+5000,dur:(g.meta.settings.turn||90)*1000,g:0,s:0,phase:"run",last:null},["teams/"+team+"/lastEx"]:ex});
+}
+function syEndTurn(lastTeam){
+  const g=syG(),t=g.turn,st=g.meta.settings,len=g.meta.len,net=syNet(t,st);
+  const pos=g.teams.map(x=>x.pos);
+  pos[t.team]=Math.max(1,pos[t.team]+net);
+  if(lastTeam>=0)pos[lastTeam]=pos[lastTeam]+1;
+  let winner=null;if(pos[t.team]>=len)winner=t.team;else{const w=pos.findIndex(p=>p>=len);if(w>=0)winner=w}
+  const o={"turn/last":lastTeam,"turn/phase":"score","turn/net":net,"turn/from":g.teams.map(x=>x.pos),"meta/next":{team:(t.team+1)%g.teams.length}};
+  pos.forEach((p,i)=>o["teams/"+i+"/pos"]=p);
+  if(winner!=null){o["meta/phase"]="done";o["meta/winner"]=winner}
+  syUpd(o);
+}
+function syLeave(){if(SY&&FB.api)FB.api.set("games/"+SY.code+"/players/"+SY.uid+"/online",false);SY=null;SW.cur=null;LS.set("sy",null);go("home")}
+
+/* ---------- מסכי סנכרון ---------- */
+V.syncHome=()=>{const saved=LS.get("sy",null);return `${hdr("home")}<h2>${ui.mode==="room"?"יחד בחדר":"מרחוק"}</h2>
+<p class="muted" style="margin-bottom:18px">${ui.mode==="room"?"כולם באותו חדר, והטלפונים מסונכרנים." : "כל אחד מאיפה שהוא, עם שיחת וואטסאפ או זום פתוחה במקביל."}</p>
+<div class="stack"><button class="choice" data-act="go" data-v="syncNew"><b>פתח משחק חדש</b><span>אתה המארח, ומקבל קוד לשליחה</span></button>
+<button class="choice" data-act="go" data-v="syncJoin"><b>הצטרף עם קוד</b><span>מישהו אחר כבר פתח משחק</span></button>
+${saved?`<button class="choice" data-act="rejoin" data-v="${saved.code}"><b>חזרה למשחק ${saved.code}</b><span>המשחק האחרון שהיית בו</span></button>`:""}</div>`};
+V.syncNew=()=>{if(!ui.setup)ui.setup={n:S.teams,names:TEAM.map(t=>t.n),len:40};const u=ui.setup;
+  return `${hdr("syncHome")}<h2>משחק חדש</h2>
+<div class="field"><label for="hn">השם שלך</label><input type="text" id="hn" maxlength="14" value="${esc(ui.myName||"")}" autocomplete="off"></div>
+<div class="field"><span class="lbl">מספר קבוצות</span><div class="seg">${[2,3,4].map(n=>`<button data-act="su" data-k="n" data-v="${n}" aria-pressed="${u.n===n}">${n}</button>`).join("")}</div></div>
+<div class="field"><span class="lbl">שמות הקבוצות</span>${Array.from({length:u.n},(_,i)=>`<div class="row">${token(i)}<input type="text" data-name="${i}" value="${esc(u.names[i])}" maxlength="18"></div>`).join("")}</div>
+<div class="field"><span class="lbl">אורך המסלול</span><div class="seg">${Object.entries(LENS).map(([l,t])=>`<button data-act="su" data-k="len" data-v="${l}" aria-pressed="${u.len==l}">${t}</button>`).join("")}</div></div>
+<p class="muted">זמן תור ${S.turn} שניות, ${S.skip==="minus"?"מינוס נקודה על דילוג":S.skip==="none"?"בלי עונש על דילוג":S.skipLimit+" דילוגים לתור"}. לשינוי, בהגדרות.</p>
+<div class="foot"><button class="btn primary" data-act="doCreate">פתח משחק</button></div>`};
+V.syncJoin=()=>`${hdr("syncHome")}<h2>הצטרפות למשחק</h2>
+<div class="field"><label for="jc">קוד המשחק</label><input type="text" id="jc" maxlength="4" value="${esc(ui.joinCode||"")}" style="font-family:var(--display);font-size:2rem;text-align:center;letter-spacing:.3em" autocomplete="off" autocapitalize="characters"></div>
+<div class="field"><label for="jn">השם שלך</label><input type="text" id="jn" maxlength="14" value="${esc(ui.myName||"")}" autocomplete="off"></div>
+<div class="field"><span class="lbl">קבוצה</span><div class="teams">${[0,1,2,3].map(i=>`<button data-act="jt" data-v="${i}" aria-pressed="${(ui.jteam||0)===i}">${token(i)}קבוצה ${i+1}</button>`).join("")}</div><span class="hint">המארח יכול להעביר אותך בהמשך.</span></div>
+<div class="foot"><button class="btn primary" data-act="doJoin">הצטרף</button></div>`;
+V.sync=()=>{const g=syG();if(!g)return `${hdr("home")}<p class="center muted" style="margin-top:40px">מתחבר...</p>`;
+  const m=g.meta,me=syMe(),host=syIsHost();
+  if(!me||!me.ok)return `${hdr("home")}<h2>ממתין לאישור</h2><p class="muted">המארח צריך לאשר אותך. המשחק: ${SY.code}</p><div class="foot"><button class="btn small ghost" data-act="leave">יציאה</button></div>`;
+  if(m.phase==="lobby")return syLobby(g,host);
+  if(m.phase==="done")return syWin(g,host);
+  return syPlay(g,host);
+};
+function syLobby(g,host){const ps=Object.entries(g.players||{});
+  return `${hdr("home",`<span class="muted">${g.meta.mode==="room"?"יחד בחדר":"מרחוק"}</span>`)}
+<p class="center muted">קוד המשחק</p><div class="big-num" style="letter-spacing:.1em">${SY.code}</div>
+<button class="btn small" data-act="shareLink">שלח קישור בוואטסאפ</button>
+<div class="list">${ps.map(([id,p])=>`<div class="li"><span class="row">${token(p.team)}<b>${esc(p.name)}</b>${p.online===false?' <span class="muted">מנותק</span>':""}${id===g.meta.host?' <span class="muted">מארח</span>':""}</span>
+${host?`<span class="row">${p.ok?`<button class="btn small ghost" style="width:auto" data-act="moveTeam" data-v="${id}">החלף קבוצה</button>`:`<button class="btn small" style="width:auto" data-act="approve" data-v="${id}">אשר</button>`}${id!==g.meta.host?`<button class="btn small ghost" style="width:auto" data-act="kick" data-v="${id}">הסר</button>`:""}</span>`:`<span class="muted">${esc(syName(p.team))}</span>`}</div>`).join("")}</div>
+${host?`<div class="foot"><button class="btn primary" data-act="startGame">התחל משחק</button></div>`:`<p class="center muted" style="margin-top:20px">ממתינים שהמארח יתחיל</p><div class="foot"><button class="btn small ghost" data-act="leave">יציאה</button></div>`}`;
+}
+function syWin(g,host){const w=g.meta.winner;
+  return `<div class="stage" style="flex-direction:column;gap:14px">${token(w).replace('class="tok"','class="tok" style="width:96px;height:96px"')}<h2 style="font-size:2.6rem;text-align:center">${esc(syName(w))} ניצחו!</h2></div>
+<div class="standing">${g.teams.map((t,i)=>`<div class="row"><span class="row">${token(i)}<b>${esc(t.name)}</b></span><span class="muted">משבצת ${Math.min(t.pos,g.meta.len)}</span></div>`).join("")}</div>
+<div class="foot" style="flex-direction:column">${host?`<button class="btn primary" data-act="syRematch">משחק חוזר עם אותן קבוצות</button>`:""}<button class="btn small ghost" data-act="leave">יציאה</button></div>`;
+}
+function syPlay(g,host){const t=g.turn,now=FB.api.now();
+  if(!t)return `${hdr("home")}${boardHTML(g.teams.map(x=>x.pos),g.meta.len)}${syStanding(g)}
+${host?`<div class="foot"><button class="btn primary" data-act="syTurn">התחל תור</button></div>`:`<p class="center muted">ממתינים שהמארח יתחיל את התור</p>`}`;
+  const paused=!!t.pauseAt,left=(paused?t.pauseAt:now)-t.start,rem=t.dur-left,ex=t.explainer===SY.uid,mine=(syMe()||{}).team===t.team;
+  const exName=(g.players[t.explainer]||{}).name||"";
+  if(t.phase==="score"){
+    return `${boardHTML(ui.disp||g.teams.map(x=>x.pos),g.meta.len)}
+<p class="center" style="font-weight:800;font-size:1.2rem">${esc(syName(t.team))}: <span dir="ltr">${sgn(t.net||0)}</span></p>
+<p class="center muted" style="margin-bottom:14px">מילה אחרונה: ${t.last>=0?esc(syName(t.last)):"אף אחד"}</p>${syStanding(g)}
+${host?`<div class="foot"><button class="btn primary" data-act="syTurn">התור הבא</button></div>`:`<p class="center muted" style="margin-top:16px">ממתינים למארח</p>`}`}
+  if(now<t.start&&!paused)return `<div class="turn"><div class="stage" style="flex-direction:column;gap:8px"><p class="center" style="font-size:1.3rem">${ex?"אתה מסביר!":esc(exName)+" מסביר"}</p>
+<div class="big-num" id="cd">${Math.max(0,Math.ceil((t.start-now)/1000))}</div><p class="center muted">${esc(syName(t.team))} מנחשים</p></div>
+${host?`<div class="foot"><button class="btn small ghost" data-act="syCancel">בטל תור</button></div>`:""}</div>`;
+  if(t.phase==="last"||rem<=0)return `<div class="turn"><div class="bang">מילה אחרונה, כולם מנחשים!</div>
+${ex?`<div class="stage" style="padding:10px 0">${wordHTML(SW.cur?SW.cur.w:"",t.level,false)}</div><p class="center" style="font-weight:800;margin-bottom:10px">מי ניחש ראשון?</p>
+<div class="teams">${g.teams.map((x,i)=>`<button data-act="syLast" data-v="${i}">${token(i)}${esc(x.name)}</button>`).join("")}<button data-act="syLast" data-v="-1">אף אחד</button></div>`
+:`<div class="stage" style="flex-direction:column"><p class="center" style="font-size:1.3rem">${esc(exName)} ממשיך להסביר</p><p class="center muted" style="margin-top:10px">מי שמנחש ראשון, הקבוצה שלו מתקדמת</p></div>`}</div>`;
+  if(ex){if(!SW.cur){SW.cur=syPick(t.level);SW.flip=true}const lim=g.meta.settings.skip==="limit"&&(t.s||0)>=(g.meta.settings.skipLimit||3);const f=SW.flip;SW.flip=false;
+    return `<div class="turn"><div class="tbar"><div class="clock" id="clock">${fmt(rem)}</div><div class="counts"><span>נוחש<b>${t.g||0}</b></span><span>דלג<b>${t.s||0}</b></span></div><div class="lvl">${tile(t.level)}</div></div>
+<div class="stage">${wordHTML(SW.cur.w,t.level,f)}</div>
+<div class="minor"><button data-act="syBad">מילה בעייתית</button>${paused?`<button data-act="syResume">המשך</button>`:host?`<button data-act="syPause">עצירה</button>`:""}</div>
+<div class="actions"><button class="btn primary" data-act="syMark" data-v="g">נוחש</button><button class="btn" data-act="syMark" data-v="s" ${lim?"disabled":""}>דלג</button></div></div>`}
+  return `<div class="turn"><div class="tbar"><div class="clock" id="clock">${fmt(rem)}</div><div class="counts"><span>נוחש<b>${t.g||0}</b></span></div><div class="lvl">${tile(t.level)}</div></div>
+<div class="stage" style="flex-direction:column;gap:10px"><p class="center" style="font-size:1.5rem;font-family:var(--display)">${mine?"הקבוצה שלך מסבירה":esc(syName(t.team))+" מסבירים"}</p>
+<p class="center muted">${esc(exName)} מסביר${mine?". תנחשו!":""}</p>${paused?`<p class="center bang">המשחק עצור</p>`:""}</div>
+${host?`<div class="minor" style="justify-content:center">${paused?`<button data-act="syResume">המשך</button>`:`<button data-act="syPause">עצירה</button>`}<button data-act="syCancel">בטל תור</button></div>`:""}</div>`;
+}
+function syAnim(from,to,len){if(anim)clearInterval(anim);
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+  ui.disp=from.slice();render();
+  anim=setInterval(()=>{let moved=false;
+    ui.disp=ui.disp.map((p,i)=>{const dst=Math.min(to[i],len);if(p!==dst){moved=true;return p+(dst>p?1:-1)}return p});
+    if(!moved){clearInterval(anim);anim=null;setTimeout(()=>{ui.disp=null;if(screen==="sync")render()},500);return}
+    const b=document.getElementById("board");if(b)b.outerHTML=boardHTML(ui.disp,len)},260)}
+function syStanding(g){return `<div class="standing">${g.teams.map((t,i)=>`<div class="row"><span class="row">${token(i)}<b>${esc(t.name)}</b></span><span class="muted">משבצת ${Math.min(t.pos,g.meta.len)} מתוך ${g.meta.len}</span></div>`).join("")}</div>
+${syIsHost()?`<div class="tools"><button class="btn small" data-act="go" data-v="syFix">תיקון ניקוד</button><button class="btn small" data-act="sySkip">העבר תור</button><button class="btn small" data-act="go" data-v="syPlayers">שחקנים</button><button class="btn small" data-act="leave">סיום משחק</button></div>`:""}`}
+V.syFix=()=>{const g=syG();return `${hdr("sync")}<h2>תיקון ניקוד</h2>${g.teams.map((t,i)=>`<div class="field"><span class="lbl row">${token(i)}${esc(t.name)}</span><div class="stepper"><button data-act="syFx" data-i="${i}" data-v="-1">−</button><output>${t.pos}</output><button data-act="syFx" data-i="${i}" data-v="1">+</button></div></div>`).join("")}`};
+V.syPlayers=()=>{const g=syG();return `${hdr("sync")}<h2>שחקנים</h2><div class="list">${Object.entries(g.players||{}).map(([id,p])=>`<div class="li"><span class="row">${token(p.team)}<b>${esc(p.name)}</b>${p.online===false?' <span class="muted">מנותק</span>':""}</span><span class="row">${p.ok?`<button class="btn small ghost" style="width:auto" data-act="moveTeam" data-v="${id}">קבוצה</button>`:`<button class="btn small" style="width:auto" data-act="approve" data-v="${id}">אשר</button>`}${id!==g.meta.host?`<button class="btn small ghost" style="width:auto" data-act="kick" data-v="${id}">הסר</button>`:""}</span></div>`).join("")}</div>`};
+
+Object.assign(A,{
+  sync:v=>{ui.mode=v;S.syncMode=v;go("syncHome")},
+  jt:v=>{ui.jteam=+v;const c=document.getElementById("jc"),n=document.getElementById("jn");ui.joinCode=c?c.value:"";ui.myName=n?n.value:"";render()},
+  doCreate:()=>{const u=ui.setup,n=document.getElementById("hn").value.trim();if(!n)return toast("כתבו את השם שלכם");
+    document.querySelectorAll("[data-name]").forEach(i=>u.names[+i.dataset.name]=i.value.trim()||TEAM[+i.dataset.name].n);
+    ui.myName=n;S.teams=u.n;saveS();syCreate(n,u.n,u.names,u.len,ui.mode||"room")},
+  doJoin:()=>{const c=document.getElementById("jc").value.trim().toUpperCase(),n=document.getElementById("jn").value.trim();
+    if(c.length<4)return toast("קוד המשחק הוא 4 תווים");if(!n)return toast("כתבו את השם שלכם");ui.myName=n;syJoin(c,n,ui.jteam||0)},
+  rejoin:v=>{ui.joinCode=v;go("syncJoin")},
+  shareLink:()=>{const t="בואו לשחק אליאס. קוד: "+SY.code+"\n"+syLink();
+    if(navigator.share)navigator.share({text:t}).catch(()=>{});
+    else if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>toast("הקישור הועתק"),()=>{});},
+  approve:v=>syUpd({["players/"+v+"/ok"]:true}),
+  kick:v=>FB.api.remove("games/"+SY.code+"/players/"+v),
+  moveTeam:v=>{const g=syG(),p=g.players[v];syUpd({["players/"+v+"/team"]:(p.team+1)%g.teams.length})},
+  startGame:()=>{const g=syG();const ok=Object.values(g.players||{}).filter(p=>p.ok);
+    if(ok.length<2)return toast("צריך לפחות שני שחקנים מאושרים");
+    const teams=new Set(ok.map(p=>p.team));if(teams.size<2)return toast("צריך שחקנים בשתי קבוצות לפחות");
+    syUpd({"meta/phase":"play"})},
+  syTurn:()=>syStartTurn(),
+  syMark:v=>{const t=syTurn();if(!t)return;syUpd(v==="g"?{"turn/g":(t.g||0)+1}:{"turn/s":(t.s||0)+1});SW.cur=syPick(t.level);SW.flip=true;render()},
+  syBad:()=>{if(SW.cur){removed.add(SW.cur.w);LS.set("removed",[...removed])}toast("המילה הוצאה");SW.cur=syPick(syTurn().level);SW.flip=true;render()},
+  syLast:v=>syEndTurn(+v),
+  syPause:()=>syUpd({"turn/pauseAt":FB.api.now()}),
+  syResume:()=>{const t=syTurn();syUpd({"turn/start":t.start+(FB.api.now()-t.pauseAt),"turn/pauseAt":null})},
+  syCancel:()=>syUpd({turn:null}),
+  sySkip:()=>{const g=syG();syUpd({"meta/next":{team:(((g.meta.next&&g.meta.next.team)||0)+1)%g.teams.length},turn:null})},
+  syFx:(v,b)=>{const g=syG(),i=+b.dataset.i;syUpd({["teams/"+i+"/pos"]:Math.max(1,Math.min(g.meta.len,g.teams[i].pos+ +v))})},
+  syRematch:()=>{const g=syG(),o={"meta/phase":"play","meta/winner":null,"meta/next":{team:0},turn:null,used:null};
+    g.teams.forEach((t,i)=>o["teams/"+i+"/pos"]=1);syUpd(o)},
+  leave:()=>syLeave(),
+});
+
 document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(!b||b.disabled)return;const f=A[b.dataset.act];if(f)f(b.dataset.v,b)});
 document.addEventListener("change",e=>{const t=e.target;if(t.dataset.pack){S.packs[t.dataset.pack]=t.checked;saveS()}if("night" in t.dataset){S.night=t.checked;saveS();render()}});
 
+function syTick(){const g=syG(),t=g&&g.turn;if(!t||t.pauseAt)return;const now=FB.api.now();
+  const ph=now<t.start?"wait":(now<t.start+t.dur?"run":"last");
+  if(ph!==ui.sph){ui.sph=ph;if(ph==="last")buzz([400,120,400]);if(ph==="run")buzz(200);render();return}
+  const cd=document.getElementById("cd");if(cd)cd.textContent=Math.max(0,Math.ceil((t.start-now)/1000));
+  const ck=document.getElementById("clock");if(ck){const left=t.start+t.dur-now;ck.textContent=fmt(left);ck.classList.toggle("low",left<=10000)}}
 /* resume after close */
 if(turn){const ph=phase();if(ph==="done"||ph==="last"||ph==="run"||ph==="wait"||ph==="end")screen="turn";if(ph==="end"&&now()>turn.start+turn.dur+120000){turn=null;saveTurn();screen="home"}}
+const urlCode=new URLSearchParams(location.search).get("g");
+if(urlCode){ui.joinCode=urlCode.toUpperCase();ui.mode="room";screen="syncJoin"}
 render();
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")){navigator.serviceWorker.register("sw.js").catch(()=>{});navigator.serviceWorker.ready.then(()=>{swReady=true;if(screen==="home")render()})}
 </script>
